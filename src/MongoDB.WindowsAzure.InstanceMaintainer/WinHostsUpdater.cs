@@ -68,8 +68,7 @@ namespace MongoDB.WindowsAzure.InstanceMaintainer
                     configSetter(RoleEnvironment.GetConfigurationSettingValue(configName));
                 });
 
-                var rsName = ConnectionUtilities.GetReplicaSetName();
-
+                var rsName = RoleSettings.ReplicaSetName;
                 Trace.TraceInformation("Replica set name is {0}", rsName);
 
                 while (true)
@@ -123,7 +122,7 @@ namespace MongoDB.WindowsAzure.InstanceMaintainer
             {
                 nodes.Add(new NodeAlias()
                 {
-                    Alias = ConnectionUtilities.GetNodeAlias(rsName, ConnectionUtilities.ParseNodeInstanceId(instance.Id)),
+                    Alias = rsName + "_" + ConnectionUtilities.GetReplicaId(instance),
                     IpAddress = instance.InstanceEndpoints[Constants.MongodPortSetting].IPEndpoint.Address.ToString()
                 });
             }

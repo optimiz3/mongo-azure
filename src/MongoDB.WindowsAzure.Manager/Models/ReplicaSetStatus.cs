@@ -18,16 +18,15 @@
 
 namespace MongoDB.WindowsAzure.Manager.Models
 {
+    using Microsoft.WindowsAzure.ServiceRuntime;
+
+    using MongoDB.Bson.Serialization;
+    using MongoDB.Driver;
+    using MongoDB.WindowsAzure.Common;
+    using MongoDB.WindowsAzure.Common.Bson;
+
     using System;
     using System.Collections.Generic;
-    using System.Linq;
-    using System.Web;
-    using MongoDB.WindowsAzure.Common;
-    using MongoDB.Driver;
-    using MongoDB.Bson;
-    using System.Globalization;
-    using Microsoft.WindowsAzure.ServiceRuntime;
-    using MongoDB.Driver.Builders;
 
     /// <summary>
     /// Stores the status of the replica set.
@@ -44,28 +43,34 @@ namespace MongoDB.WindowsAzure.Manager.Models
         /// <summary>
         /// The state of the replica set.
         /// </summary>
-        public State Status { get; private set; }
+        public State Status
+        {
+            get
+            {
+                if (this.Error != null)
+                {
+                    return State.Error;
+                }
 
-        /// <summary>
-        /// The name of the replica set, if Status is OK.
-        /// </summary>
-        public string ReplicaSetName { get; private set; }
+                if (this.Value == null || this.Value.StartupStatus.HasValue)
+                {
+                    return State.Initializing;
+                }
+
+                return State.OK;
+            }
+        }
+
+        public ReplSetStatus Value
+        {
+            get;
+            set;
+        }
 
         /// <summary>
         /// The error we received while fetching the status, if Status is Error.
         /// </summary>
         public MongoException Error { get; private set; }
-
-        /// <summary>
-        /// The actual servers in the replica set.
-        /// </summary>
-        public List<ServerStatus> Servers { get; set; }
-
-        private ReplicaSetStatus()
-        {
-            Status = State.Initializing;
-            Servers = new List<ServerStatus>();
-        }
 
         /// <summary>
         /// Fetches the current status.
@@ -77,7 +82,7 @@ namespace MongoDB.WindowsAzure.Manager.Models
                 return GetDummyStatus();
             }
 
-            var server = MongoServer.Create(ConnectionUtilities.GetConnectionSettings(true));
+            var server = ConnectionUtilities.CreateServer(true);
             if (server.State == MongoServerState.Disconnected)
             {
                 try
@@ -86,41 +91,50 @@ namespace MongoDB.WindowsAzure.Manager.Models
                 }
                 catch (MongoConnectionException e)
                 {
-                    return new ReplicaSetStatus { Status = State.Error, Error = e };
+                    return new ReplicaSetStatus { Error = e };
                 }
             }
 
-            BsonDocument document;
+            ReplicaSetStatus status;
+
+            if (RoleSettings.ReplicaSetName == null)
+            {
+                var replSetStatus = new ReplSetStatus
+                {
+                    Members = new List<ReplSetMember>()
+                    {
+                        new ReplSetMember
+                        {
+                            Id = 0,
+                            Name = server.Instance.Address.ToString(),
+                            Health = ReplSetMemberHealth.Up,
+                            State = ReplSetMemberState.Primary,
+                        },
+                    },
+                };
+
+                status = new ReplicaSetStatus
+                {
+                    Value = replSetStatus,
+                };
+
+                return status;
+            }
+
             try
             {
-                document = server["admin"]["$cmd"].FindOne(Query.EQ("replSetGetStatus", 1));
+                status = new ReplicaSetStatus
+                {
+                    Value = BsonSerializer.Deserialize<ReplSetStatus>(
+                        server["admin"].RunCommand("replSetGetStatus").Response),
+                };
             }
-            catch (MongoCommandException e)
+            catch (MongoException e)
             {
-                return new ReplicaSetStatus { Status = State.Error, Error = e };
-            }
-            return ParseStatus(document);
-        }
-
-        /// <summary>
-        /// Parses and returns the status from a replSetGetStatus result.
-        /// </summary>
-        private static ReplicaSetStatus ParseStatus(BsonDocument response)
-        {
-            // See if starting up...
-            BsonValue startupStatus;
-            if (response.TryGetValue("startupStatus", out startupStatus))
-            {
-                return new ReplicaSetStatus { Status = State.Initializing };
+                return new ReplicaSetStatus { Error = e };
             }
 
-            // Otherwise, extract the servers...
-            return new ReplicaSetStatus
-            {
-                Status = State.OK,
-                ReplicaSetName = response.GetValue("set").AsString,
-                Servers = ServerStatus.Parse(response.GetElement("members").Value.AsBsonArray)
-            };
+            return status;
         }
 
         /// <summary>
@@ -131,39 +145,43 @@ namespace MongoDB.WindowsAzure.Manager.Models
         {
             return new ReplicaSetStatus
             {
-                Status = State.OK,
-                ReplicaSetName = "rs-offline-dummy-data",
-                Servers = new List<ServerStatus>(new ServerStatus[] {
-                    new ServerStatus
+                Value = new ReplSetStatus
+                {
+                    ReplicaSetName = "rs-offline-dummy-data",
+                    Members = new List<ReplSetMember>
                     {
-                        Id = 0,
-                        Name = "localhost:27018",
-                        Health = ServerStatus.HealthTypes.Up,
-                        CurrentState = ServerStatus.State.Secondary,
-                        LastHeartBeat = DateTime.Now.Subtract(new TimeSpan(0, 0, 1)),
-                        LastOperationTime = DateTime.Now,
-                        PingTime = new Random().Next(20, 600)
+                        new ReplSetMember
+                        {
+                            Id = 0,
+                            Name = "localhost:27018",
+                            Health = ReplSetMemberHealth.Up,
+                            State = ReplSetMemberState.Secondary,
+                            LastHeartBeat = DateTime.Now.Subtract(new TimeSpan(0, 0, 1)),
+                            LastOperationTime = DateTime.Now,
+                            PingTime = new Random().Next(20, 600)
+                        },
+                        new ReplSetMember
+                        {
+                            Id = 1,
+                            Name = "localhost:27019",
+                            Health = ReplSetMemberHealth.Up,
+                            State = ReplSetMemberState.Primary,
+                            LastHeartBeat = DateTime.MinValue,
+                            LastOperationTime = DateTime.Now,
+                            PingTime = 0
+                        },
+                        new ReplSetMember
+                        {
+                            Id = 2,
+                            Name = "localhost:27020",
+                            Health = ReplSetMemberHealth.Down,
+                            State = ReplSetMemberState.Down,
+                            LastHeartBeat = DateTime.MinValue,
+                            LastOperationTime = DateTime.MinValue,
+                            PingTime = 0,
+                        },
                     },
-                    new ServerStatus
-                    {
-                        Id = 1,
-                        Name = "localhost:27019",
-                        Health = ServerStatus.HealthTypes.Up,
-                        CurrentState = ServerStatus.State.Primary,
-                        LastHeartBeat = DateTime.MinValue,
-                        LastOperationTime = DateTime.Now,
-                        PingTime = 0
-                    },
-                    new ServerStatus
-                    {
-                        Id = 2,
-                        Name = "localhost:27020",
-                        Health = ServerStatus.HealthTypes.Down,
-                        CurrentState = ServerStatus.State.Down,
-                        LastHeartBeat = DateTime.MinValue,
-                        LastOperationTime = DateTime.MinValue,
-                        PingTime = 0,
-                    } })
+                }
             };
         }
     }

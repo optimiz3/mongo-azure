@@ -18,156 +18,353 @@
 
 namespace MongoDB.WindowsAzure.MongoDBRole
 {
-
     using Microsoft.WindowsAzure.ServiceRuntime;
 
     using MongoDB.Bson;
+    using MongoDB.Bson.Serialization;
     using MongoDB.Driver;
     using MongoDB.WindowsAzure.Common;
+    using MongoDB.WindowsAzure.Common.Bson;
 
     using System;
-    using System.Text;
+    using System.Net;
+    using System.Threading;
 
     internal static class DatabaseHelper
     {
-        private static string currentRoleName = null;
+        private static readonly string AuthenticationRequired = "need to login";
 
-        static DatabaseHelper()
-        {
-            currentRoleName = RoleEnvironment.CurrentRoleInstance.Role.Name;
-        }
+        private const int RetryDelayMS = 400;
 
-        private static CommandResult ReplicaSetGetStatus(int port)
+        /// <summary>
+        /// Initialzes a replica set if enabled and provisions authentication if enabled.
+        /// </summary>
+        /// <param name="endPoint">The IPEndPoint of the MongoDB replica instance to provision from.</param>
+        internal static void Initialize(IPEndPoint endPoint)
         {
-            try
+            DatabaseHelper.EnsureMongodIsListening(endPoint);
+
+            var authenticate = RoleSettings.Authenticate && 
+                RoleSettings.AdminCredentials != null;
+
+            if (RoleSettings.ReplicaSetName != null)
             {
-                var server = GetLocalSlaveOkConnection(port);
-                return server["admin"].RunCommand("replSetGetStatus");
-            }
-            catch (MongoCommandException mongoCommandException)
-            {
-                return mongoCommandException.CommandResult;
-            }
-        }
+                var primaryId = -1;
 
-        internal static void RunInitializeCommandLocally(
-            string rsName,
-            int port)
-        {
-            var replicaSetRoleCount = RoleEnvironment.Roles[currentRoleName].Instances.Count;
-            var membersDocument = new BsonArray();
-            for (int i = 0; i < replicaSetRoleCount; i++)
-            {
-                EnsureMongodIsListening(rsName, i, port);
-                membersDocument.Add(new BsonDocument {
-                    {"_id", i},
-                    {"host", RoleEnvironment.IsEmulated 
-                        ? string.Format(Settings.LocalHostString, (port+i))
-                        : ConnectionUtilities.GetNodeAlias(rsName, i)}
-                });
-            }
-            var cfg = new BsonDocument {
-                {"_id", rsName},
-                {"members", membersDocument}
-            };
-            var initCommand = new CommandDocument {
-                {"replSetInitiate", cfg}
-            };
-            var server = GetLocalSlaveOkConnection(port);
-            var result = server["admin"].RunCommand(initCommand);
+                bool replSetInit = false, addAdmin = false;
 
-        }
-
-        internal static bool IsReplicaSetInitialized(int port)
-        {
-            var result = ReplicaSetGetStatus(port);
-            if (!result.Ok)
-            {
-                return false;
-            }
-
-            BsonValue startupStatus;
-            if (result.Response.TryGetValue("startupStatus", out startupStatus))
-            {
-                if (startupStatus == 3)
-                {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        internal static void StepdownIfNeeded(int port)
-        {
-            var server = GetLocalSlaveOkConnection(port);
-            if (server.State == MongoServerState.Disconnected)
-            {
-                server.Connect();
-            }
-            
-            if (server.Instance.IsPrimary)
-            {
-                var stepDownCommand = new CommandDocument {
-                    {"replSetStepDown", 1}
-                };
-
-                server["admin"].RunCommand(stepDownCommand);
-            }
-        }
-
-        internal static MongoServer GetLocalSlaveOkConnection(int port)
-        {
-            return GetSlaveOkConnection("localhost", port);
-        }
-
-        internal static MongoServer GetSlaveOkConnection(string hostAlias, int port)
-        {
-            var connectionString = "mongodb://{0}:{1}/?slaveOk=true";
-            var server = MongoServer.Create(string.Format(connectionString, hostAlias, port));
-            return server;
-        }
-
-        internal static void SetLogLevel(int port, string logLevelString)
-        {
-            int logLevel = logLevelString.Length;
-
-            var commandDocument = new BsonDocument {
-                {"setParameter", 1},
-                {"logLevel", (logLevel-1)<6?(logLevel-1):5}
-            };
-
-            var setLogLevelCommand = new CommandDocument(commandDocument);
-            var server = GetLocalSlaveOkConnection(port);
-            var result = server["admin"].RunCommand(setLogLevelCommand);
-        }
-
-        internal static void EnsureMongodIsListening(string rsName, int instanceId, int mongodPort)
-        {
-            var alias = ConnectionUtilities.GetNodeAlias(rsName, instanceId);
-            for (;;)
-            {
-                // TODO: Prevent denial-of-service against the the local
-                // machine if GetConnection keeps failing.
+                var server = GetSlaveOkConnection(endPoint);
+                var adminDatabase = server.GetDatabase(
+                    "admin",
+                    SafeMode.True);
                 try
                 {
-                    MongoServer conn;
-                    if (RoleEnvironment.IsEmulated)
+                    try
                     {
-                        conn = DatabaseHelper.GetLocalSlaveOkConnection(mongodPort + instanceId);
+                        var replSetStatus = BsonSerializer.Deserialize<ReplSetStatus>(
+                            adminDatabase
+                            .RunCommand("replSetGetStatus")
+                            .Response);
+
+                        primaryId = GetPrimaryId(replSetStatus);
                     }
-                    else
+                    catch (MongoAuthenticationException)
                     {
-                        conn = DatabaseHelper.GetSlaveOkConnection(alias, mongodPort);
+                        // Admin database needs to be provisioned
+                        addAdmin = true;
+
+                        adminDatabase = server.GetDatabase(
+                            "admin",
+                            null,
+                            SafeMode.True);
+
+                        var replSetStatus = BsonSerializer.Deserialize<ReplSetStatus>(
+                            adminDatabase
+                            .RunCommand("replSetGetStatus")
+                            .Response);
+
+                        primaryId = GetPrimaryId(replSetStatus);
                     }
-                    conn.Connect(new TimeSpan(0, 0, 5));
+                }
+                catch (MongoCommandException e)
+                {
+                    if (e.CommandResult.ErrorMessage == AuthenticationRequired)
+                    {
+                        // Another instance provisioned authentication
+                        return;
+                    }
+
+                    if (!TryGetIsReplSetInit(e, out replSetInit))
+                    {
+                        throw;
+                    }
+                }
+
+                var instanceId = ConnectionUtilities.GetReplicaId(
+                    RoleEnvironment.CurrentRoleInstance);
+
+                if (replSetInit)
+                {
+                    if (instanceId == 0)
+                    {
+                        DatabaseHelper.ReplSetInit(
+                            adminDatabase);
+                    }
+                }
+
+                if (authenticate)
+                {
+                    if (primaryId == -1)
+                    {
+                        for (;;)
+                        {
+                            try
+                            {
+                                var replSetStatus = BsonSerializer.Deserialize<ReplSetStatus>(
+                                    adminDatabase.RunCommand("replSetGetStatus").Response);
+
+                                primaryId = GetPrimaryId(replSetStatus);
+
+                                if (primaryId >= 0)
+                                {
+                                    break;
+                                }
+                            }
+                            catch (MongoCommandException e)
+                            {
+                                if (e.CommandResult.ErrorMessage == AuthenticationRequired)
+                                {
+                                    // Another instance provisioned authentication
+                                    return;
+                                }
+
+                                if (!TryGetIsReplSetInit(e, out replSetInit))
+                                {
+                                    throw;
+                                }
+                            }
+
+                            Thread.Sleep(RetryDelayMS);
+                        }
+                    }
+
+                    if (instanceId == primaryId)
+                    {
+                        if (addAdmin)
+                        {
+                            DatabaseHelper.ProvisionAdminUser(
+                                endPoint.Port);
+                        }
+
+                        DatabaseHelper.ProvisionUsers();
+                    }
+                }
+            }
+            else
+            {
+                if (authenticate)
+                {
+                    var server = GetSlaveOkConnection(endPoint);
+                    var adminDatabase = server.GetDatabase("admin");
+                    try
+                    {
+                        adminDatabase.GetStats();
+                    }
+                    catch (MongoAuthenticationException)
+                    {
+                        DatabaseHelper.ProvisionAdminUser(
+                            endPoint.Port);
+                    }
+
+                    DatabaseHelper.ProvisionUsers();
+                }
+            }
+        }
+
+        internal static MongoServer GetSlaveOkConnection(IPEndPoint endPoint)
+        {
+            return ConnectionUtilities.CreateServer(
+                true,
+                null,
+                endPoint);
+        }
+
+        internal static void Shutdown(IPEndPoint endPoint)
+        {
+            using (DiagnosticsHelper.TraceMethod())
+            {
+                var server = DatabaseHelper.GetSlaveOkConnection(endPoint);
+                server.Shutdown();
+            }
+        }
+        
+        internal static void Stepdown(IPEndPoint endPoint)
+        {
+            using (DiagnosticsHelper.TraceMethod())
+            {
+                var server = GetSlaveOkConnection(endPoint);
+                if (server.State == MongoServerState.Disconnected)
+                {
+                    server.Connect();
+                }
+
+                if (server.Instance.IsPrimary)
+                {
+                    var stepDownCommand = new CommandDocument
+                    {
+                        {"replSetStepDown", 1}
+                    };
+
+                    try
+                    {
+                        server["admin"].RunCommand(stepDownCommand);
+                    }
+                    catch (System.IO.EndOfStreamException)
+                    {
+                        // replSetStepDown forces the client to disconnect
+                        // http://docs.mongodb.org/manual/reference/command/replSetStepDown/#replSetStepDown
+                    }
+                }
+            }
+        }
+
+        private static void EnsureMongodIsListening(IPEndPoint endPoint)
+        {
+            var server = GetSlaveOkConnection(endPoint);
+            for (; ; )
+            {
+                try
+                {
+                    server.Connect(new TimeSpan(0, 0, 5));
+
                     break;
                 }
                 catch (MongoConnectionException e)
                 {
                     DiagnosticsHelper.TraceInformation(e.Message);
                 }
+
+                Thread.Sleep(RetryDelayMS);
             }
         }
 
+        private static int GetPrimaryId(ReplSetStatus replSetStatus)
+        {
+            foreach (var member in replSetStatus.Members)
+            {
+                if (member.State == ReplSetMemberState.Primary)
+                {
+                    return member.Id;
+                }
+            }
+
+            return -1;
+        }
+
+        private static void ProvisionAdminUser(
+            int port)
+        {
+            // admin provisoning is only allowed over a localhost connection
+            var server = MongoServer.Create("mongodb://localhost:" + port + "/");
+
+            var adminDatabase = server.GetDatabase(
+                "admin",
+                null,
+                SafeMode.True);
+
+            try
+            {
+                adminDatabase.AddUser(RoleSettings.AdminCredentials);
+            }
+            catch (MongoSafeModeException e)
+            {
+                // Thrown after authentication is enabled
+                if (e.CommandResult.ErrorMessage != AuthenticationRequired)
+                {
+                    throw;
+                }
+            }
+        }
+
+        private static void ProvisionUsers()
+        {
+            var userCredentials = Settings.UserCredentials;
+            var userDatabases = Settings.UserDatabases;
+
+            if (userCredentials == null ||
+                userDatabases == null ||
+                userDatabases.Count == 0)
+            {
+                return;
+            }
+
+            // user provisioning must happen against the primary
+            var server = ConnectionUtilities.CreateServer(false);
+
+            var adminCredentials = RoleSettings.AdminCredentials;
+
+            foreach (var databaseName in userDatabases)
+            {
+                // admin credentials are required for user provisioning
+                var database = server.GetDatabase(
+                    databaseName,
+                    adminCredentials,
+                    SafeMode.True);
+
+                // always reprovision as the password may have changed
+                database.AddUser(userCredentials);
+            }
+        }
+
+        private static void ReplSetInit(
+            MongoDatabase adminDatabase)
+        {
+            var currentInstance = RoleEnvironment.CurrentRoleInstance;
+
+            var instances = RoleEnvironment.Roles[
+                currentInstance.Role.Name].Instances;
+
+            var membersDocument = new BsonArray();
+            foreach (var instance in instances)
+            {
+                var replicaEndPoint = ConnectionUtilities.GetReplicaEndPoint(instance);
+
+                if (instance != currentInstance)
+                {
+                    EnsureMongodIsListening(replicaEndPoint);
+                }
+
+                var replicaId = ConnectionUtilities.GetReplicaId(instance);
+
+                membersDocument.Add(new BsonDocument {
+                    {"_id", replicaId },
+                    {"host", replicaEndPoint.ToString() }
+                });
+            }
+            var cfg = new BsonDocument {
+                { "_id", RoleSettings.ReplicaSetName },
+                { "members", membersDocument }
+            };
+            var initCommand = new CommandDocument {
+                { "replSetInitiate", cfg }
+            };
+            adminDatabase.RunCommand(initCommand);
+        }
+
+        private static bool TryGetIsReplSetInit(MongoCommandException e, out bool replSetInit)
+        {
+            BsonValue value;
+
+            if (!e.CommandResult.Response.TryGetValue("startupStatus", out value))
+            {
+                replSetInit = false;
+
+                return false;
+            }
+
+            replSetInit = (ReplSetStartupStatus)value.AsInt32 == ReplSetStartupStatus.ErrorConfig;
+
+            return true;
+        }
     }
 }

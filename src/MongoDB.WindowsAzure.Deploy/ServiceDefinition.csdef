@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<ServiceDefinition name="MongoDBReplicaSet" xmlns="http://schemas.microsoft.com/ServiceHosting/2008/10/ServiceDefinition" schemaVersion="2012-05.1.7">
+<ServiceDefinition name="MongoDBReplicaSet" xmlns="http://schemas.microsoft.com/ServiceHosting/2008/10/ServiceDefinition" schemaVersion="2012-10.1.8">
   <WorkerRole name="MongoDB.WindowsAzure.MongoDBRole" vmsize="Medium">
     <Startup>
       <Task commandLine="InstanceMaintainer.cmd" executionContext="elevated" taskType="background" />
@@ -13,8 +13,14 @@
     <ConfigurationSettings>
       <Setting name="MongoDBDataDir" />
       <Setting name="ReplicaSetName" />
+      <Setting name="ReplicaSetKey" />
+      <Setting name="Authenticate" />
+      <Setting name="AdminCredentials" />
+      <Setting name="UserCredentials" />
+      <Setting name="UserDatabases" />
       <Setting name="MongoDBDataDirSizeMB" />
       <Setting name="MongoDBLogVerbosity" />
+      <Setting name="MongoDBDirectoryPerDB" />
       <Setting name="RecycleOnExit" />
     </ConfigurationSettings>
     <LocalResources>
@@ -43,6 +49,8 @@
     <ConfigurationSettings>
       <Setting name="ReplicaSetName" />
       <Setting name="MongoDBDataDir" />
+      <Setting name="Authenticate" />
+      <Setting name="AdminCredentials" />
     </ConfigurationSettings>
     <LocalResources>
       <LocalStorage name="BackupDriveCache" cleanOnRoleRecycle="true" sizeInMB="512" />

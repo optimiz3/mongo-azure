@@ -47,15 +47,21 @@ namespace MongoDB.WindowsAzure.Backup
             var container = client.GetContainerReference(Constants.BackupContainerName);
             try
             {
-                container.FetchAttributes();
+                // Collect all the blobs!
+                return container.ListBlobs()
+                    .Select(item => (CloudBlob)item)
+                    .Where(item => item.Name.EndsWith(".tar", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
             }
-            catch (StorageClientException) // Container not found...
+            catch (StorageClientException e) // Container not found...
             {
-                return new List<CloudBlob>();
-            }
+                if (e.ErrorCode == StorageErrorCode.ContainerNotFound)
+                {
+                    return new List<CloudBlob>();
+                }
 
-            // Collect all the blobs!
-            return container.ListBlobs().Select(item => ((CloudBlob) item)).Where(item => item.Name.EndsWith(".tar")).ToList();
+                throw;
+            }
         }
     }
 }

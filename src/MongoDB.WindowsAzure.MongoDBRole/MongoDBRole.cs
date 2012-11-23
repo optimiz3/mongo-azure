@@ -18,38 +18,36 @@
 
 namespace MongoDB.WindowsAzure.MongoDBRole
 {
+    using Microsoft.WindowsAzure;
+    using Microsoft.WindowsAzure.ServiceRuntime;
+    using Microsoft.WindowsAzure.StorageClient;
+
+    using MongoDB.Driver;
+    using MongoDB.WindowsAzure.Common;
 
     using System;
-    using System.Diagnostics;
     using System.IO;
     using System.Linq;
     using System.Net;
     using System.Threading;
 
-    using Microsoft.WindowsAzure;
-    using Microsoft.WindowsAzure.Diagnostics;
-    using Microsoft.WindowsAzure.ServiceRuntime;
-    using Microsoft.WindowsAzure.StorageClient;
-
-    using MongoDB.WindowsAzure.Common;
-    using MongoDB.Driver;
-
     public class MongoDBRole : RoleEntryPoint
     {
-        private Process mongodProcess;
+        private MongoDBProcess mongodProcess;
         private CloudDrive mongoDataDrive;
-        private string mongodHost;
-        private int mongodPort;
-        private string mongodDataDriveLetter;
-        private string replicaSetName;
         private ManualResetEvent stopEvent;
-        private int instanceId;
+        private string tempKeyFile;
 
         public override void Run()
         {
             using (DiagnosticsHelper.TraceMethod())
             {
                 this.mongodProcess.WaitForExit();
+
+                if (this.tempKeyFile != null)
+                {
+                    File.Delete(this.tempKeyFile);                    
+                }
 
                 if (!Settings.RecycleOnExit)
                 {
@@ -76,33 +74,11 @@ namespace MongoDB.WindowsAzure.MongoDBRole
                 RoleEnvironment.Changing += RoleEnvironmentChanging;
                 RoleEnvironment.Changed += RoleEnvironmentChanged;
 
-                replicaSetName = RoleEnvironment.GetConfigurationSettingValue(Constants.ReplicaSetNameSetting);
-                instanceId = ConnectionUtilities.ParseNodeInstanceId(RoleEnvironment.CurrentRoleInstance.Id);
-
-                DiagnosticsHelper.TraceInformation("ReplicaSetName={0}", replicaSetName);
-
-                SetHostAndPort();
-                DiagnosticsHelper.TraceInformation("Obtained host={0}, port={1}", mongodHost, mongodPort);
+                DiagnosticsHelper.TraceInformation("ReplicaSetName='{0}'", RoleSettings.ReplicaSetName);
 
                 StartMongoD();
-                DiagnosticsHelper.TraceInformation("Mongod process started");
 
-                // Need to ensure MongoD is up here
-                DatabaseHelper.EnsureMongodIsListening(replicaSetName, instanceId, mongodPort);
-
-                if ((instanceId == 0) && !DatabaseHelper.IsReplicaSetInitialized(mongodPort))
-                {
-                    try
-                    {
-                        DatabaseHelper.RunInitializeCommandLocally(replicaSetName, mongodPort);
-                        DiagnosticsHelper.TraceInformation("RSInit issued successfully");
-                    }
-                    catch (MongoCommandException e)
-                    {
-                        //Ignore exceptions caught on rs init for now
-                        DiagnosticsHelper.TraceWarningException("Exception on RSInit", e);
-                    }
-                }
+                DatabaseHelper.Initialize(this.mongodProcess.EndPoint);
 
                 this.stopEvent = new ManualResetEvent(false);
             }
@@ -114,47 +90,47 @@ namespace MongoDB.WindowsAzure.MongoDBRole
         {
             using (DiagnosticsHelper.TraceMethod())
             {
-                try
+                if (this.mongodProcess != null &&
+                    this.mongodProcess.IsRunning)
                 {
-                    if ((mongodProcess != null) &&
-                        !(mongodProcess.HasExited))
+                    if (RoleSettings.ReplicaSetName != null)
                     {
-                        DatabaseHelper.StepdownIfNeeded(mongodPort);
+                        try
+                        {
+                            DatabaseHelper.Stepdown(this.mongodProcess.EndPoint);
+                        }
+                        catch (MongoCommandException e)
+                        {
+                            // Ignore MongoCommandExceptions in OnStop
+                            DiagnosticsHelper.TraceWarningException("Stepdown failed", e);
+                        }
                     }
-                }
-                catch (MongoCommandException e)
-                {
-                    //Ignore exceptions caught on unmount
-                    DiagnosticsHelper.TraceWarningException("Exception in onstop - stepdown failed", e);
+
+                    try
+                    {
+                        DatabaseHelper.Shutdown(this.mongodProcess.EndPoint);
+                    }
+                    catch (MongoCommandException e)
+                    {
+                        // Ignore MongoCommandExceptions in OnStop
+                        DiagnosticsHelper.TraceWarningException("Shutdown failed", e);
+                    }
                 }
 
-                try
+                if (this.mongoDataDrive != null)
                 {
-                    if ((mongodProcess != null) &&
-                        !(mongodProcess.HasExited))
+                    try
                     {
-                        this.ShutdownMongoD();
+                        using (DiagnosticsHelper.TraceMethod("CloudDataDrive.Unmount"))
+                        {
+                            this.mongoDataDrive.Unmount();
+                        }
                     }
-                }
-                catch (MongoCommandException e)
-                {
-                    //Ignore exceptions caught on unmount
-                    DiagnosticsHelper.TraceWarningException("Exception in onstop - mongo shutdown", e);
-                }
-
-                try
-                {
-                    DiagnosticsHelper.TraceInformation("Unmount called on data drive");
-                    if (mongoDataDrive != null)
+                    catch (CloudDriveException e)
                     {
-                        mongoDataDrive.Unmount();
+                        //Ignore CloudDriveException in OnStop
+                        DiagnosticsHelper.TraceWarningException("Unmount failed", e);
                     }
-                    DiagnosticsHelper.TraceInformation("Unmount completed on data drive");
-                }
-                catch (CloudDriveException e)
-                {
-                    //Ignore exceptions caught on unmount
-                    DiagnosticsHelper.TraceWarningException("Exception in onstop - unmount of data drive", e);
                 }
 
                 if (this.stopEvent != null)
@@ -164,112 +140,193 @@ namespace MongoDB.WindowsAzure.MongoDBRole
             }
         }
 
-        private void SetHostAndPort()
+        private static string CreateKeyFile(
+            string replicaSetKey)
         {
-            var endPoint = RoleEnvironment.CurrentRoleInstance.InstanceEndpoints[Constants.MongodPortSetting].IPEndpoint;
-            mongodHost = endPoint.Address.ToString();
-            mongodPort = endPoint.Port;
-            if (RoleEnvironment.IsEmulated)
+            var tempFileName = Path.GetTempFileName();
+
+            using (var streamWriter = new StreamWriter(
+                tempFileName))
             {
-                mongodPort += instanceId;
+                streamWriter.Write(replicaSetKey);
             }
+
+            return tempFileName;
         }
 
-        private void ShutdownMongoD()
+        private static CloudDrive MountCloudDrive()
         {
-            using (DiagnosticsHelper.TraceMethod())
+            var containerName = ConnectionUtilities.GetDataContainerName(
+                RoleSettings.ReplicaSetName);
+
+            var replicaId = ConnectionUtilities.GetReplicaId(
+                RoleEnvironment.CurrentRoleInstance);
+            var blobName = ConnectionUtilities.GetDataBlobName(replicaId);
+
+            DiagnosticsHelper.TraceInformation("Mounting cloud drive as container \"{0}\" with blob \"{1}\"",
+                containerName,
+                blobName);
+
+            var storageAccount = CloudStorageAccount.FromConfigurationSetting(
+                Constants.MongoDataCredentialSetting);
+
+            var blobClient = storageAccount.CreateCloudBlobClient();
+
+            DiagnosticsHelper.TraceInformation("Get container");
+            var driveContainer = blobClient.GetContainerReference(containerName);
+
+            // create blob container (it has to exist before creating the cloud drive)
+            try
             {
-                var server = DatabaseHelper.GetLocalSlaveOkConnection(mongodPort);
-                server.Shutdown();
+                driveContainer.CreateIfNotExist();
             }
+            catch (StorageException e)
+            {
+                DiagnosticsHelper.TraceErrorException(
+                    "Failed to create container",
+                    e);
+                throw;
+            }
+
+            var mongoBlobUri = blobClient
+                .GetContainerReference(containerName)
+                .GetPageBlobReference(blobName)
+                .Uri;
+            DiagnosticsHelper.TraceInformation("Blob uri obtained {0}", mongoBlobUri);
+
+            // create the cloud drive
+            var mongoDrive = storageAccount.CreateCloudDrive(mongoBlobUri.ToString());
+
+            try
+            {
+                mongoDrive.CreateIfNotExist(Settings.DataDirSizeMB);
+            }
+            catch (StorageException e)
+            {
+                DiagnosticsHelper.TraceErrorException(
+                    "Failed to create cloud drive",
+                    e);
+                throw;
+            }
+
+            DiagnosticsHelper.TraceInformation("Initialize cache");
+            var localStorage = RoleEnvironment.GetLocalResource(
+                Settings.LocalDataDirSetting);
+
+            CloudDrive.InitializeCache(
+                localStorage.RootPath.TrimEnd('\\'),
+                localStorage.MaximumSizeInMegabytes);
+
+            // mount the drive and get the root path of the drive it's mounted as
+            try
+            {
+                using (DiagnosticsHelper.TraceMethod("CloudDrive.Mount"))
+                {
+                    mongoDrive.Mount(
+                        localStorage.MaximumSizeInMegabytes,
+                        DriveMountOptions.None);
+                }
+            }
+            catch (CloudDriveException e)
+            {
+                DiagnosticsHelper.TraceErrorException(
+                    "Failed to mount cloud drive",
+                    e);
+                throw;
+            }
+
+            return mongoDrive;
         }
 
         private void StartMongoD()
         {
             using (DiagnosticsHelper.TraceMethod())
             {
-                var mongoAppRoot = Path.Combine(
-                    Environment.GetEnvironmentVariable("RoleRoot") + @"\",
-                    Settings.MongoDBBinaryFolder);
-                var mongodPath = Path.Combine(mongoAppRoot, @"mongod.exe");
+                var endPoints = ConnectionUtilities.GetReplicaEndPoints(
+                    RoleEnvironment.CurrentRoleInstance);
 
-                var blobPath = GetMongoDataDirectory();
+                var mongodEndPoint = endPoints.First();
 
-                var logFile = GetLogFile();
+                DiagnosticsHelper.TraceInformation(
+                    "Obtained host={0}, port={1}",
+                    mongodEndPoint.Address,
+                    mongodEndPoint.Port);
+
+                var mongodPath = Path.Combine(
+                    Environment.GetEnvironmentVariable("RoleRoot"),
+                    Settings.MongoDBBinaryFolder,
+                    "mongod.exe");
+
+                var dbPath = GetMongoDataPath();
+
+                var logPath = GetLogPath();
 
                 var logLevel = Settings.MongodLogLevel;
 
-                string cmdline;
+                var mongodProcess = new MongoDBProcess(mongodPath);
+
+                mongodProcess.Port = mongodEndPoint.Port;
+                mongodProcess.DbPath = dbPath;
+                mongodProcess.DirectoryPerDb = Settings.DirectoryPerDB;
+                mongodProcess.LogLevel = Settings.MongodLogLevel;
+                //mongodProcess.LogPath = logFile;
+
+                // Azure doesn't support IPv6 yet
+                // https://www.windowsazure.com/en-us/support/faq/
+                //mongodProcess.IPv6 = true;
+
+                //mongodProcess.BindIp = endPoints.Select(endPoint => endPoint.Address).ToArray();
+
+                mongodProcess.ReplSet = RoleSettings.ReplicaSetName;
+
+                mongodProcess.Auth = RoleSettings.Authenticate;
+
+                var replicaSetKey = Settings.ReplicaSetKey;
+                if (replicaSetKey != null)
+                {
+                    this.tempKeyFile = CreateKeyFile(replicaSetKey);
+
+                    mongodProcess.KeyFile = this.tempKeyFile;
+                }
+
                 if (RoleEnvironment.IsEmulated)
                 {
-                    cmdline = String.Format(Settings.MongodCommandLineEmulated,
-                        mongodPort,
-                        blobPath,
-                        logFile,
-                        replicaSetName,
-                        logLevel);
+                    mongodProcess.OpLogSizeMB = 100;
+                    mongodProcess.SmallFiles = true;
+                    mongodProcess.NoPreAlloc = true;
                 }
                 else
                 {
-                    cmdline = String.Format(Settings.MongodCommandLineCloud,
-                        mongodPort,
-                        blobPath,
-                        logFile,
-                        replicaSetName,
-                        logLevel);
+                    mongodProcess.NoHttpInterface = true;
+                    mongodProcess.LogAppend = true;
                 }
 
-                DiagnosticsHelper.TraceInformation("Launching mongod as \"{0}\" {1}", mongodPath, cmdline);
+                mongodProcess.Start();
 
-                // launch mongo
-                try
-                {
-                    mongodProcess = new Process()
-                    {
-                        StartInfo = new ProcessStartInfo(mongodPath, cmdline)
-                        {
-                            UseShellExecute = false,
-                            WorkingDirectory = mongoAppRoot,
-                            CreateNoWindow = false
-                        }
-                    };
-                    mongodProcess.Start();
-                }
-                catch (Exception e)
-                {
-                    DiagnosticsHelper.TraceErrorException("Can't start Mongo", e);
-                    throw; // throwing an exception here causes the VM to recycle
-                }
+                this.mongodProcess = mongodProcess;
             }
         }
 
-        private string GetMongoDataDirectory()
+
+        private string GetMongoDataPath()
         {
             using (DiagnosticsHelper.TraceMethod())
             {
-                var dataBlobName = string.Format(Constants.MongoDataBlobName, instanceId);
-                var containerName = ConnectionUtilities.GetDataContainerName(replicaSetName);
-                mongodDataDriveLetter = Utilities.GetMountedPathFromBlob(
-                    Settings.LocalDataDirSetting,
-                    Constants.MongoDataCredentialSetting,
-                    containerName,
-                    dataBlobName,
-                    Settings.DataDirSizeMB,
-                    out mongoDataDrive);
-                DiagnosticsHelper.TraceInformation("Obtained azure drive, mounted as \"{0}\"", mongodDataDriveLetter);
-                var dir = Directory.CreateDirectory(Path.Combine(mongodDataDriveLetter, @"data"));
-                DiagnosticsHelper.TraceInformation("Data directory is \"{0}\"", dir.FullName);
-                return dir.FullName;
+                this.mongoDataDrive = MountCloudDrive();
+                DiagnosticsHelper.TraceInformation("Mounted Azure drive as \"{0}\"", this.mongoDataDrive.LocalPath);
+
+                var path = Path.Combine(this.mongoDataDrive.LocalPath, "data");
+                Directory.CreateDirectory(path);
+                return path;
             }
         }
 
-        private string GetLogFile()
+        private static string GetLogPath()
         {
             using (DiagnosticsHelper.TraceMethod())
             {
                 var localStorage = RoleEnvironment.GetLocalResource(Settings.LogDirSetting);
-                var logfile = Path.Combine(localStorage.RootPath + @"\", Settings.MongodLogFileName);
-                return ("\"" + logfile + "\"");
+                return Path.Combine(localStorage.RootPath, Settings.MongodLogFileName);
             }
         }
 
@@ -300,13 +357,14 @@ namespace MongoDB.WindowsAzure.MongoDBRole
                 switch (settingName)
                 {
                     case Settings.LogVerbositySetting:
-                        var logLevel = Settings.GetLogVerbosity();
-                        if (logLevel != null)
+                        var logLevel = Settings.GetLogLevel();
+                        if (logLevel != Settings.MongodLogLevel)
                         {
-                            if (logLevel != Settings.MongodLogLevel)
+                            Settings.MongodLogLevel = logLevel;
+
+                            if (this.mongodProcess != null)
                             {
-                                Settings.MongodLogLevel = logLevel;
-                                DatabaseHelper.SetLogLevel(mongodPort, logLevel);
+                                this.mongodProcess.LogLevel = logLevel;
                             }
                         }
                         break;

@@ -8,7 +8,7 @@
         @switch (Model.Status)
         {
             case MongoDB.WindowsAzure.Manager.Models.ReplicaSetStatus.State.OK:
-            <span>with <b>replica set name:</b> <code>@Model.ReplicaSetName</code> </span>
+            <span>with <b>replica set name:</b> <code>@Model.Value.ReplicaSetName</code> </span>
                                                  break;
 
             case MongoDB.WindowsAzure.Manager.Models.ReplicaSetStatus.State.Error:
@@ -17,7 +17,7 @@
         }
     </div>
     <br />
-    @if (Model.Servers.Count > 0)
+    @if (Model.Value != null && Model.Value.Members.Count > 0)
     {   
         <table class="table table-striped table-bordered">
             <tr>
@@ -43,9 +43,9 @@
                     Ping (to Primary)
                 </th>
             </tr>
-            @foreach (var server in Model.Servers)
+            @foreach (var member in Model.Value.Members)
             {
-                @Html.Partial("_ServerRow", (MongoDB.WindowsAzure.Manager.Models.ServerStatus) server)
+                @Html.Partial("_ServerRow", member)
             }
         </table>
     }

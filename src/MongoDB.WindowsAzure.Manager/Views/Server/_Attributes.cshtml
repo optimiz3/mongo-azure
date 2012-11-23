@@ -1,4 +1,4 @@
-﻿@model MongoDB.WindowsAzure.Manager.Models.ServerStatus
+﻿@model MongoDB.WindowsAzure.Common.Bson.ReplSetMember
 <table class="table table-striped table-bordered server-attributes-table">
     <tr>
         <td class="server-attr">
@@ -22,9 +22,9 @@
             State
         </td>
         <td>
-            @Model.CurrentState
+            @Model.State
 
-            @if (@Model.CurrentState == MongoDB.WindowsAzure.Manager.Models.ServerStatus.State.Primary)
+            @if (@Model.State == MongoDB.WindowsAzure.Common.Bson.ReplSetMemberState.Primary)
             {
                 @Html.ActionLink("(Step down...)", "StepDown", new { id = Model.Id });
             }
@@ -35,7 +35,7 @@
             Ping
         </td>
         <td>
-            @if (Model.CurrentState == MongoDB.WindowsAzure.Manager.Models.ServerStatus.State.Primary)
+            @if (Model.State == MongoDB.WindowsAzure.Common.Bson.ReplSetMemberState.Primary)
             {
 
                 <i>N/A</i>
@@ -51,7 +51,7 @@
             Last Heartbeat
         </td>
         <td>
-            @if (@Model.LastHeartBeat == DateTime.MinValue || Model.CurrentState == MongoDB.WindowsAzure.Manager.Models.ServerStatus.State.Primary)
+            @if (@Model.LastHeartBeat == DateTime.MinValue || Model.State == MongoDB.WindowsAzure.Common.Bson.ReplSetMemberState.Primary)
             {
 
                 <i>N/A</i>

@@ -49,7 +49,10 @@
     <CodeAnalysisRuleSet>AllRules.ruleset</CodeAnalysisRuleSet>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="Microsoft.WindowsAzure.ServiceRuntime, Version=1.7.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL" />
+    <Reference Include="Microsoft.WindowsAzure.ServiceRuntime, Version=1.8.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>C:\Program Files\Microsoft SDKs\Windows Azure\.NET SDK\2012-10\ref\Microsoft.WindowsAzure.ServiceRuntime.dll</HintPath>
+    </Reference>
     <Reference Include="MongoDB.Bson">
       <HintPath>..\..\lib\mongocsharpdriver.1.4.2\MongoDB.Bson.dll</HintPath>
     </Reference>
@@ -64,6 +67,11 @@
     <Compile Include="..\GlobalAssemblyInfo.cs">
       <Link>Properties\GlobalAssemblyInfo.cs</Link>
     </Compile>
+    <Compile Include="Bson\ReplSetStartupStatus.cs" />
+    <Compile Include="Bson\ReplSetMemberHealth.cs" />
+    <Compile Include="Bson\ReplSetMemberState.cs" />
+    <Compile Include="Bson\ReplSetStatus.cs" />
+    <Compile Include="Bson\ReplSetMember.cs" />
     <Compile Include="RoleSettings.cs" />
     <Compile Include="Constants.cs" />
     <Compile Include="ConnectionUtilities.cs" />

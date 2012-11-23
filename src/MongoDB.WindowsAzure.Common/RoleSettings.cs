@@ -18,16 +18,17 @@
 
 namespace MongoDB.WindowsAzure.Common
 {
-    using System;
-    using System.Collections.Generic;
-    using System.Linq;
-    using System.Text;
     using Microsoft.WindowsAzure.ServiceRuntime;
+
+    using MongoDB.Driver;
+
+    using System.Configuration;
+    using System.Globalization;
 
     /// <summary>
     /// A shorthand class to fetch role environmental variables.
     /// </summary>
-    public class RoleSettings
+    public static class RoleSettings
     {
         /// <summary>
         /// The credentials provided to access the MongoDB storage account.
@@ -47,8 +48,88 @@ namespace MongoDB.WindowsAzure.Common
         {
             get
             {
-                return RoleEnvironment.GetConfigurationSettingValue(Constants.ReplicaSetNameSetting);
+                var replicaSetName = RoleEnvironment.GetConfigurationSettingValue(
+                    Constants.ReplicaSetNameSetting);
+
+                if (replicaSetName.Length == 0)
+                {
+                    return null;
+                }
+
+                return replicaSetName;
             }
+        }
+
+        /// <summary>
+        /// Gets whether authentication is enabled. Defaults to "false".
+        /// </summary>
+        public static bool Authenticate
+        {
+            get
+            {
+                var str = RoleEnvironment.GetConfigurationSettingValue(
+                    Constants.AuthenticateSetting);
+
+                if (str.Length == 0)
+                {
+                    return false;
+                }
+
+                bool value;
+
+                if (!bool.TryParse(str, out value))
+                {
+                    ThrowInvalidConfigurationSetting(
+                        Constants.AuthenticateSetting,
+                        str);
+                }
+
+                return value;
+            }
+        }
+
+        /// <summary>
+        /// Gets the admin authentication credentials. Defaults to null.
+        /// </summary>
+        public static MongoCredentials AdminCredentials
+        {
+            get
+            {
+                var str = RoleEnvironment.GetConfigurationSettingValue(
+                    Constants.AdminCredentialsSetting);
+
+                if (str.Length == 0)
+                {
+                    return null;
+                }
+
+                var separator = str.IndexOf(':');
+
+                if (separator < 0)
+                {
+                    ThrowInvalidConfigurationSetting(
+                        Constants.AdminCredentialsSetting,
+                        "<hidden>");
+                }
+
+                return new MongoCredentials(
+                    str.Substring(0, separator),
+                    str.Substring(separator + 1),
+                    true);
+            }
+        }
+
+        private static void ThrowInvalidConfigurationSetting(
+            string name,
+            string value)
+        {
+            var message = string.Format(
+                CultureInfo.InvariantCulture,
+                "Configuration setting name '{0}' has invalid value \"{1}\"",
+                name,
+                value);
+
+            throw new ConfigurationErrorsException(message);
         }
     }
 }

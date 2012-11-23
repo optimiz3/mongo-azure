@@ -1,4 +1,4 @@
-﻿@model MongoDB.WindowsAzure.Manager.Models.ServerStatus
+﻿@model MongoDB.WindowsAzure.Common.Bson.ReplSetMember
 @*<div id="server_@Model.id" class="server">
 
     <h4>@Model.name</h4>
@@ -16,14 +16,14 @@
         @Model.Health
     </td>
     <td>
-        @if (@Model.CurrentState == MongoDB.WindowsAzure.Manager.Models.ServerStatus.State.Primary)
+        @if (@Model.State == MongoDB.WindowsAzure.Common.Bson.ReplSetMemberState.Primary)
         {
             <img class="currentState" alt="Primary" src="../../Images/Server/State/Primary.png" />
         }
-        @Model.CurrentState
+        @Model.State
     </td>
     <td>
-        @if (@Model.LastHeartBeat == DateTime.MinValue || Model.CurrentState == MongoDB.WindowsAzure.Manager.Models.ServerStatus.State.Primary)
+        @if (@Model.LastHeartBeat == DateTime.MinValue || Model.State == MongoDB.WindowsAzure.Common.Bson.ReplSetMemberState.Primary)
         {
             <i>N/A</i>
         }
@@ -43,7 +43,7 @@
         }
     </td>
     <td>
-        @if (Model.CurrentState == MongoDB.WindowsAzure.Manager.Models.ServerStatus.State.Primary)
+        @if (Model.State == MongoDB.WindowsAzure.Common.Bson.ReplSetMemberState.Primary)
         {
             <i>N/A</i>
         }

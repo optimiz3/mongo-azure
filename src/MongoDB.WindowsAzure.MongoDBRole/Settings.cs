@@ -21,8 +21,10 @@ namespace MongoDB.WindowsAzure.MongoDBRole
     using Microsoft.WindowsAzure.ServiceRuntime;
 
     using MongoDB.WindowsAzure.Common;
+    using MongoDB.Driver;
 
     using System;
+    using System.Collections.ObjectModel;
     using System.Configuration;
     using System.Globalization;
     using System.Text.RegularExpressions;
@@ -37,14 +39,14 @@ namespace MongoDB.WindowsAzure.MongoDBRole
         internal const string DataDirSizeMBSetting = "MongoDBDataDirSizeMB";
         internal const string LogDirSetting = "MongodLogDir";
         internal const string LogVerbositySetting = "MongoDBLogVerbosity";
+        internal const string DirectoryPerDBSetting = "MongoDBDirectoryPerDB";
         internal const string RecycleOnExitSetting = "RecycleOnExit";
+        internal const string ReplicaSetKeySetting = "ReplicaSetKey";
+        internal const string UserCredentialsSetting = "UserCredentials";
+        internal const string UserDatabasesSetting = "UserDatabases";
 
         internal const string MongoDBBinaryFolder = @"approot\MongoDBBinaries\bin";
         internal const string MongodLogFileName = "mongod.log";
-        internal const string MongodCommandLineCloud = "--port {0} --dbpath {1} --logpath {2} --nohttpinterface --logappend --replSet {3} {4}";
-        internal const string MongodCommandLineEmulated = "--port {0} --dbpath {1} --logpath {2} --replSet {3} {4} --oplogSize 100 --smallfiles --noprealloc";
-
-        internal const string LocalHostString = "localhost:{0}";
 
         internal static readonly string[] ExemptConfigurationItems =
             new[] { LogVerbositySetting, RecycleOnExitSetting };
@@ -57,22 +59,30 @@ namespace MongoDB.WindowsAzure.MongoDBRole
         #endregion DO NOT MODIFY
 
         internal static readonly int DataDirSizeMB = GetDataDirSizeMB(); // in MB
-        internal static string MongodLogLevel = GetLogVerbosity();
+        internal static int MongodLogLevel = GetLogLevel();
         internal static bool RecycleOnExit = GetRecycleOnExit();
+        internal static readonly string ReplicaSetKey = GetReplicaSetKey();
+        internal static readonly bool DirectoryPerDB = GetDirectoryPerDB();
+        internal static readonly MongoCredentials UserCredentials = GetCredentials(UserCredentialsSetting, false);
+        internal static readonly ReadOnlyCollection<string> UserDatabases = GetDatabases(UserDatabasesSetting);
 
-        internal static string GetLogVerbosity()
+        internal static bool GetRecycleOnExit()
+        {
+            return GetBooleanSetting(RecycleOnExitSetting, true);
+        }
+
+        internal static int GetLogLevel()
         {
             string value;
 
             if (!TryGetRoleConfigurationSettingValue(
                 Settings.LogVerbositySetting,
-                out value) ||
-                value.Length == 0)
+                out value))
             {
-                return null;
+                return 1;
             }
 
-            var m = Regex.Match(value, "^-?(v+)$");
+            var m = Regex.Match(value, "^-?(v{1,6})$");
             if (!m.Success)
             {
                 ThrowInvalidConfigurationSetting(
@@ -80,60 +90,111 @@ namespace MongoDB.WindowsAzure.MongoDBRole
                     value);
             }
 
-            return "-" + m.Groups[1].Value;
+            return m.Groups[1].Value.Length - 1;
         }
 
-        internal static bool GetRecycleOnExit()
+        private static MongoCredentials GetCredentials(
+            string configurationSettingName,
+            bool admin)
         {
             string value;
 
             if (!TryGetRoleConfigurationSettingValue(
-                Settings.RecycleOnExitSetting,
-                out value) ||
-                value.Length == 0)
+                configurationSettingName,
+                out value))
             {
-                return true;
+                return null;
             }
 
-            bool recycleOnExit;
+            var separator = value.IndexOf(':');
 
-            if (!bool.TryParse(value, out recycleOnExit))
+            if (separator < 0)
             {
                 ThrowInvalidConfigurationSetting(
-                    Settings.RecycleOnExitSetting,
-                    value);
+                    configurationSettingName,
+                    "<hidden>");
             }
 
-            return recycleOnExit;
+            return new MongoCredentials(
+                value.Substring(0, separator),
+                value.Substring(separator + 1),
+                admin);
+        }
+
+        private static ReadOnlyCollection<string> GetDatabases(
+            string configurationSettingName)
+        {
+            string value;
+
+            if (!TryGetRoleConfigurationSettingValue(
+                configurationSettingName,
+                out value))
+            {
+                return null;
+            }
+
+            return Array.AsReadOnly(value.Split(','));
         }
 
         private static int GetDataDirSizeMB()
         {
-            string value;
+            int dataDirSizeMB;
 
             if (!TryGetRoleConfigurationSettingValue(
                     DataDirSizeMBSetting,
-                    out value) ||
-                value.Length == 0)
+                    out dataDirSizeMB))
             {
-                return RoleEnvironment.IsEmulated ?
+                dataDirSizeMB = RoleEnvironment.IsEmulated ?
                     DefaultEmulatedDBDriveSize : DefaultDeployedDBDriveSize;
             }
 
-            int dataDirSizeMB;
+            return dataDirSizeMB;
+        }
 
-            if (!int.TryParse(
-                value,
-                NumberStyles.None,
-                CultureInfo.InvariantCulture,
-                out dataDirSizeMB))
+        private static bool GetDirectoryPerDB()
+        {
+            return GetBooleanSetting(
+                Settings.DirectoryPerDBSetting,
+                false);
+        }
+
+        private static string GetReplicaSetKey()
+        {
+            string value;
+
+            if (!TryGetRoleConfigurationSettingValue(
+                Settings.ReplicaSetKeySetting,
+                out value))
+            {
+                return null;
+            }
+
+            // values must be base64
+            var m = Regex.Match(value, "^(?:[0-9A-Za-z+/]{4})*(?:[0-9A-Za-z+/]{2}==|[0-9A-Za-z+/]{3}=|[0-9A-Za-z+/]{4})$");
+            if (!m.Success)
             {
                 ThrowInvalidConfigurationSetting(
-                    DataDirSizeMBSetting,
+                    Settings.ReplicaSetKeySetting,
                     value);
             }
 
-            return dataDirSizeMB;
+            return value;
+        }
+
+        private static bool GetBooleanSetting(
+            string configurationSettingName,
+            bool defaultValue)
+        {
+            bool value;
+
+            if (!TryGetRoleConfigurationSettingValue(
+                configurationSettingName,
+                out value))
+            {
+                return defaultValue;
+            }
+
+            return value;
         }
 
         private static bool TryGetRoleConfigurationSettingValue(
@@ -149,6 +210,67 @@ namespace MongoDB.WindowsAzure.MongoDBRole
                 value = null;
 
                 return false;
+            }
+
+            if (value.Length == 0)
+            {
+                value = null;
+
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool TryGetRoleConfigurationSettingValue(
+            string configurationSettingName,
+            out bool value)
+        {
+            string str;
+
+            if (!TryGetRoleConfigurationSettingValue(
+                configurationSettingName,
+                out str))
+            {
+                value = false;
+
+                return false;
+            }
+
+            if (!bool.TryParse(str, out value))
+            {
+                ThrowInvalidConfigurationSetting(
+                    configurationSettingName,
+                    str);
+            }
+
+            return true;
+        }
+
+        private static bool TryGetRoleConfigurationSettingValue(
+            string configurationSettingName,
+            out int value)
+        {
+            string str;
+
+            if (!TryGetRoleConfigurationSettingValue(
+                configurationSettingName,
+                out str))
+            {
+                value = 0;
+
+                return false;
+            }
+
+            if (!int.TryParse(
+                str,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out value))
+            {
+                ThrowInvalidConfigurationSetting(
+                    configurationSettingName,
+                    str);
             }
 
             return true;

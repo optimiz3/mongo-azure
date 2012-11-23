@@ -61,7 +61,7 @@ namespace MongoDB.WindowsAzure.Tools.BlobBackup
             Uri snapshotUri = null;
             if (doSnapshot)
             {
-                var mongoDBRoleCount = ConnectionUtilities.GetDatabaseWorkerRoles().Count;
+                var mongoDBRoleCount = ConnectionUtilities.GetMongoDBInstances().Count;
                 int instanceId = 0;
                 bool isInt = int.TryParse(arg, out instanceId);
                 if (!isInt || instanceId < 0 || instanceId > (mongoDBRoleCount-1))

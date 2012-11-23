@@ -89,5 +89,15 @@ namespace MongoDB.WindowsAzure.Common
         /// The name of the local storage used for BlobBackup's drive mounting.
         /// </summary>
         public const string BackupLocalStorageName = "BackupDriveCache";
+
+        /// <summary>
+        /// The name of the setting that specifies whether authentication is enabled
+        /// </summary>
+        public const string AuthenticateSetting = "Authenticate";
+
+        /// <summary>
+        /// The name of the setting that specifies the admin authentication credentials
+        /// </summary>
+        public const string AdminCredentialsSetting = "AdminCredentials";
     }
 }
