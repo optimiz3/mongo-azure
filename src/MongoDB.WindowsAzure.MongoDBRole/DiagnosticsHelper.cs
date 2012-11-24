@@ -46,7 +46,7 @@ namespace MongoDB.WindowsAzure.MongoDBRole
 
         internal static IDisposable TraceMethod(string methodName)
         {
-            return new TraceStartStop(methodName);
+            return new TraceMethodDisposable(methodName);
         }
 
         internal static void TraceStart(string message)
@@ -152,11 +152,11 @@ namespace MongoDB.WindowsAzure.MongoDBRole
             return Path.GetFileName(Environment.GetCommandLineArgs()[0]);
         }
 
-        private class TraceStartStop : IDisposable
+        private class TraceMethodDisposable : IDisposable
         {
             private readonly string methodName;
 
-            public TraceStartStop(string methodName)
+            public TraceMethodDisposable(string methodName)
             {
                 DiagnosticsHelper.TraceStart(methodName);
 
