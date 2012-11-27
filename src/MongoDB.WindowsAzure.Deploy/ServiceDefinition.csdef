@@ -1,9 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <ServiceDefinition name="MongoDBReplicaSet" xmlns="http://schemas.microsoft.com/ServiceHosting/2008/10/ServiceDefinition" schemaVersion="2012-10.1.8">
   <WorkerRole name="MongoDB.WindowsAzure.MongoDBRole" vmsize="Medium">
-    <Startup>
-      <Task commandLine="InstanceMaintainer.cmd" executionContext="elevated" taskType="background" />
-    </Startup>
     <Imports>
       <Import moduleName="Diagnostics" />
     </Imports>
@@ -30,9 +27,6 @@
     </LocalResources>
   </WorkerRole>
   <WebRole name="MongoDB.WindowsAzure.Manager" vmsize="Small">
-    <Startup>
-      <Task commandLine="InstanceMaintainer.cmd" executionContext="elevated" taskType="background" />
-    </Startup>
     <Sites>
       <Site name="Web">
         <Bindings>

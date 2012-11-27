@@ -269,7 +269,7 @@ namespace MongoDB.WindowsAzure.MongoDBRole
                 mongodProcess.DbPath = dbPath;
                 mongodProcess.DirectoryPerDb = Settings.DirectoryPerDB;
                 mongodProcess.LogLevel = Settings.MongodLogLevel;
-                //mongodProcess.LogPath = logFile;
+                mongodProcess.LogPath = logPath;
 
                 // Azure doesn't support IPv6 yet
                 // https://www.windowsazure.com/en-us/support/faq/

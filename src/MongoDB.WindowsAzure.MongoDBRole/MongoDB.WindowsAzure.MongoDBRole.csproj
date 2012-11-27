@@ -106,9 +106,6 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <Link>MongoDBBinaries\THIRD-PARTY-NOTICES</Link>
     </None>
-    <None Include="InstanceMaintainer.cmd">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
@@ -172,21 +169,9 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\Tools\BlobBackup\MongoDB.WindowsAzure.Tools.BlobBackup.csproj">
-      <Project>{09C3062F-B630-4203-A62E-7CCAD5102C12}</Project>
-      <Name>MongoDB.WindowsAzure.Tools.BlobBackup</Name>
-    </ProjectReference>
-    <ProjectReference Include="..\MongoDB.WindowsAzure.Backup\MongoDB.WindowsAzure.Backup.csproj">
-      <Project>{9EACF3D7-8EFD-470E-BA7B-E20D3FCF9FCD}</Project>
-      <Name>MongoDB.WindowsAzure.Backup</Name>
-    </ProjectReference>
     <ProjectReference Include="..\MongoDB.WindowsAzure.Common\MongoDB.WindowsAzure.Common.csproj">
       <Project>{D0AF0851-5BCF-4D8C-BFD2-1D53060C1997}</Project>
       <Name>MongoDB.WindowsAzure.Common</Name>
-    </ProjectReference>
-    <ProjectReference Include="..\MongoDB.WindowsAzure.InstanceMaintainer\MongoDB.WindowsAzure.InstanceMaintainer.csproj">
-      <Project>{9D7D400C-E0A1-49CD-85DC-A6BDA40EA738}</Project>
-      <Name>MongoDB.WindowsAzure.InstanceMaintainer</Name>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup />
