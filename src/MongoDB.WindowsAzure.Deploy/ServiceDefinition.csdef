@@ -13,15 +13,15 @@
     <ConfigurationSettings>
       <Setting name="MongoDBDataDir" />
       <Setting name="ReplicaSetName" />
+      <Setting name="MongoDBDataDirSizeMB" />
+      <Setting name="MongoDBLogVerbosity" />
+      <Setting name="MongoDBDirectoryPerDB" />
+      <Setting name="RecycleOnExit" />
       <Setting name="ReplicaSetKey" />
       <Setting name="Authenticate" />
       <Setting name="AdminCredentials" />
       <Setting name="UserCredentials" />
       <Setting name="UserDatabases" />
-      <Setting name="MongoDBDataDirSizeMB" />
-      <Setting name="MongoDBLogVerbosity" />
-      <Setting name="MongoDBDirectoryPerDB" />
-      <Setting name="RecycleOnExit" />
     </ConfigurationSettings>
     <LocalResources>
       <LocalStorage name="MongoDBLocalDataDir" cleanOnRoleRecycle="false" sizeInMB="1024" />

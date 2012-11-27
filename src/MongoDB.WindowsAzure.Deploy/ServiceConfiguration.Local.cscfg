@@ -1,27 +1,27 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <ServiceConfiguration serviceName="MongoDBReplicaSet" xmlns="http://schemas.microsoft.com/ServiceHosting/2008/10/ServiceConfiguration" osFamily="2" osVersion="*" schemaVersion="2012-10.1.8">
   <Role name="MongoDB.WindowsAzure.MongoDBRole">
-    <Instances count="1" />
+    <Instances count="3" />
     <ConfigurationSettings>
       <Setting name="MongoDBDataDir" value="UseDevelopmentStorage=true" />
-      <Setting name="ReplicaSetName" value="" />
+      <Setting name="ReplicaSetName" value="rs" />
+      <Setting name="MongoDBDataDirSizeMB" value="" />
+      <Setting name="MongoDBLogVerbosity" value="" />
+      <Setting name="Microsoft.WindowsAzure.Plugins.Diagnostics.ConnectionString" value="UseDevelopmentStorage=true" />
+      <Setting name="RecycleOnExit" value="false" />
       <Setting name="ReplicaSetKey" value="dshjdsdskjsdfkjhwasdquen7382" />
       <Setting name="Authenticate" value="true" />
       <Setting name="AdminCredentials" value="secret_admin:54321" />
       <Setting name="UserCredentials" value="secret_user:12345" />
       <Setting name="UserDatabases" value="defaultdb" />
-      <Setting name="MongoDBDataDirSizeMB" value="" />
-      <Setting name="MongoDBLogVerbosity" value="v" />
       <Setting name="MongoDBDirectoryPerDB" value="true" />
-      <Setting name="Microsoft.WindowsAzure.Plugins.Diagnostics.ConnectionString" value="UseDevelopmentStorage=true" />
-      <Setting name="RecycleOnExit" value="false" />
     </ConfigurationSettings>
   </Role>
   <Role name="MongoDB.WindowsAzure.Manager">
     <Instances count="1" />
     <ConfigurationSettings>
       <Setting name="Microsoft.WindowsAzure.Plugins.Diagnostics.ConnectionString" value="UseDevelopmentStorage=true" />
-      <Setting name="ReplicaSetName" value="" />
+      <Setting name="ReplicaSetName" value="rs" />
       <Setting name="MongoDBDataDir" value="UseDevelopmentStorage=true" />
       <Setting name="Authenticate" value="true" />
       <Setting name="AdminCredentials" value="secret_admin:54321" />
