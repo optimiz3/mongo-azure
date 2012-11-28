@@ -224,7 +224,7 @@ namespace MongoDB.WindowsAzure.MongoDBRole
                 {
                     mongoDrive.Mount(
                         localStorage.MaximumSizeInMegabytes,
-                        DriveMountOptions.None);
+                        DriveMountOptions.Force);
                 }
             }
             catch (CloudDriveException e)
@@ -269,7 +269,7 @@ namespace MongoDB.WindowsAzure.MongoDBRole
                 mongodProcess.DbPath = dbPath;
                 mongodProcess.DirectoryPerDb = Settings.DirectoryPerDB;
                 mongodProcess.LogLevel = Settings.MongodLogLevel;
-                mongodProcess.LogPath = logPath;
+                //mongodProcess.LogPath = logPath;
 
                 // Azure doesn't support IPv6 yet
                 // https://www.windowsazure.com/en-us/support/faq/
@@ -375,16 +375,25 @@ namespace MongoDB.WindowsAzure.MongoDBRole
                 }
             }
 
+            var currentRoleName = RoleEnvironment.CurrentRoleInstance.Role.Name;
+
             // Get the list of topology changes
             var topologyChanges = e.Changes.OfType<RoleEnvironmentTopologyChange>();
 
             foreach (var topologyChange in topologyChanges)
             {
                 var roleName = topologyChange.RoleName;
+
                 DiagnosticsHelper.TraceInformation(
                     "Role {0} now has {1} instance(s)",
                     roleName,
                     RoleEnvironment.Roles[roleName].Instances.Count);
+
+                if (roleName == currentRoleName)
+                {
+                    DatabaseHelper.Reinitialize(
+                        this.mongodProcess.EndPoint);
+                }
             }
         }
     }

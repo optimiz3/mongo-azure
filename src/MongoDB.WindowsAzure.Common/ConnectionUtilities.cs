@@ -173,35 +173,44 @@ namespace MongoDB.WindowsAzure.Common
 
             var port = -1;
 
+            Action<RoleInstanceEndpoint> addInstanceEndPoint = instanceEndPoint =>
+            {
+                var endPoint = instanceEndPoint.IPEndpoint;
+
+                if (port == -1)
+                {
+                    port = endPoint.Port;
+                }
+                else if (port != endPoint.Port)
+                {
+                    throw new ConfigurationErrorsException(
+                        "Multiple ports are not supported");
+                }
+
+                // Clone the endpoint as the port be modified
+                endPoint = new IPEndPoint(endPoint.Address, endPoint.Port);
+
+                // Workaround for
+                if (RoleEnvironment.IsEmulated)
+                {
+                    endPoint.Port += replicaId;
+                }
+
+                replicaEndPoints[index] = endPoint;
+
+                ++index;
+            };
+
             // select internal-only endpoints first
             if (index < replicaEndPoints.Length)
             {
+
                 foreach (var instanceEndpoint in instance.InstanceEndpoints.Values)
                 {
                     if (instanceEndpoint.IPEndpoint != null &&
                         instanceEndpoint.PublicIPEndpoint == null)
                     {
-                        var endPoint = instanceEndpoint.IPEndpoint;
-
-                        if (port == -1)
-                        {
-                            port = endPoint.Port;
-                        }
-                        else if (port != endPoint.Port)
-                        {
-                            throw new ConfigurationErrorsException(
-                                "Multiple ports are not supported");
-                        }
-
-                        // Workaround for
-                        if (RoleEnvironment.IsEmulated)
-                        {
-                            endPoint.Port += replicaId;
-                        }
-
-                        replicaEndPoints[index] = endPoint;
-
-                        ++index;
+                        addInstanceEndPoint(instanceEndpoint);
                     }
                 }
             }
@@ -214,27 +223,7 @@ namespace MongoDB.WindowsAzure.Common
                     if (instanceEndpoint.IPEndpoint != null &&
                         instanceEndpoint.PublicIPEndpoint != null)
                     {
-                        var endPoint = instanceEndpoint.IPEndpoint;
-
-                        if (port == -1)
-                        {
-                            port = endPoint.Port;
-                        }
-                        else if (port != endPoint.Port)
-                        {
-                            throw new ConfigurationErrorsException(
-                                "Multiple ports are not supported");
-                        }
-
-                        // Workaround for
-                        if (RoleEnvironment.IsEmulated)
-                        {
-                            endPoint.Port += replicaId;
-                        }
-
-                        replicaEndPoints[index] = endPoint;
-
-                        ++index;
+                        addInstanceEndPoint(instanceEndpoint);
                     }
                 }
             }
