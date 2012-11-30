@@ -95,28 +95,46 @@ namespace MongoDB.WindowsAzure.Common
         {
             get
             {
-                var str = RoleEnvironment.GetConfigurationSettingValue(
-                    Constants.AdminCredentialsSetting);
-
-                if (str.Length == 0)
-                {
-                    return null;
-                }
-
-                var separator = str.IndexOf(':');
-
-                if (separator < 0)
-                {
-                    ThrowInvalidConfigurationSetting(
-                        Constants.AdminCredentialsSetting,
-                        "<hidden>");
-                }
-
-                return new MongoCredentials(
-                    str.Substring(0, separator),
-                    str.Substring(separator + 1),
-                    true);
+                return GetCredentials(Constants.AdminCredentialsSetting, true);
             }
+        }
+
+        /// <summary>
+        /// Gets the user authentication credentials. Defaults to null.
+        /// </summary>
+        public static MongoCredentials UserCredentials
+        {
+            get
+            {
+                return GetCredentials(Constants.UserCredentialsSetting, false);
+            }
+        }
+
+        private static MongoCredentials GetCredentials(
+            string configurationSettingName,
+            bool admin)
+        {
+            var value = RoleEnvironment.GetConfigurationSettingValue(
+                configurationSettingName);
+
+            if (value.Length == 0)
+            {
+                return null;
+            }
+
+            var separator = value.IndexOf(':');
+
+            if (separator < 0)
+            {
+                ThrowInvalidConfigurationSetting(
+                    configurationSettingName,
+                    "<hidden>");
+            }
+
+            return new MongoCredentials(
+                value.Substring(0, separator),
+                value.Substring(separator + 1),
+                admin);
         }
 
         private static void ThrowInvalidConfigurationSetting(

@@ -106,29 +106,31 @@ namespace MongoDB.WindowsAzure.Common
             string replicaSetName,
             IEnumerable<MongoServerAddress> servers)
         {
-            var serverSettings = new MongoServerSettings
+            var clientSettings = new MongoClientSettings
             {
                 Servers = servers,
-                SlaveOk = slaveOk,
-                SafeMode = SafeMode.True
+                ReadPreference = slaveOk ?
+                    ReadPreference.SecondaryPreferred :
+                    ReadPreference.Primary,
+                WriteConcern = WriteConcern.Acknowledged
             };
 
             if (RoleSettings.Authenticate && RoleSettings.AdminCredentials != null)
             {
-                serverSettings.CredentialsStore.AddCredentials("admin", RoleSettings.AdminCredentials);
+                clientSettings.CredentialsStore.AddCredentials("admin", RoleSettings.AdminCredentials);
             }
 
             if (replicaSetName != null)
             {
-                serverSettings.ReplicaSetName = replicaSetName;
-                serverSettings.ConnectionMode = ConnectionMode.ReplicaSet;
+                clientSettings.ReplicaSetName = replicaSetName;
+                clientSettings.ConnectionMode = ConnectionMode.ReplicaSet;
             }
             else
             {
-                serverSettings.ConnectionMode = ConnectionMode.Direct;
+                clientSettings.ConnectionMode = ConnectionMode.Direct;
             }
 
-            return MongoServer.Create(serverSettings);
+            return new MongoClient(clientSettings).GetServer();
         }
 
         /// <summary>

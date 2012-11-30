@@ -19,6 +19,7 @@
       <Setting name="AdminCredentials" />
       <Setting name="UserCredentials" />
       <Setting name="UserDatabases" />
+      <Setting name="LogFileEnable" />
     </ConfigurationSettings>
     <LocalResources>
       <LocalStorage name="MongoDBLocalDataDir" cleanOnRoleRecycle="false" sizeInMB="1024" />

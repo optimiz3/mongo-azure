@@ -99,5 +99,11 @@ namespace MongoDB.WindowsAzure.Common
         /// The name of the setting that specifies the admin authentication credentials
         /// </summary>
         public const string AdminCredentialsSetting = "AdminCredentials";
+
+        /// <summary>
+        /// The name of the setting that specifies the user authentication credentials
+        /// </summary>
+        public const string UserCredentialsSetting = "UserCredentials";
+
     }
 }

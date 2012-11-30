@@ -42,8 +42,8 @@ namespace MongoDB.WindowsAzure.MongoDBRole
         internal const string DirectoryPerDBSetting = "MongoDBDirectoryPerDB";
         internal const string RecycleOnExitSetting = "RecycleOnExit";
         internal const string ReplicaSetKeySetting = "ReplicaSetKey";
-        internal const string UserCredentialsSetting = "UserCredentials";
         internal const string UserDatabasesSetting = "UserDatabases";
+        internal const string LogFileEnableSetting = "LogFileEnable";
 
         internal const string MongoDBBinaryFolder = @"approot\MongoDBBinaries\bin";
         internal const string MongodLogFileName = "mongod.log";
@@ -61,9 +61,9 @@ namespace MongoDB.WindowsAzure.MongoDBRole
         internal static readonly int DataDirSizeMB = GetDataDirSizeMB(); // in MB
         internal static int MongodLogLevel = GetLogLevel();
         internal static bool RecycleOnExit = GetRecycleOnExit();
+        internal static readonly bool LogFileEnable = GetLogFileEnable();
         internal static readonly string ReplicaSetKey = GetReplicaSetKey();
         internal static readonly bool DirectoryPerDB = GetDirectoryPerDB();
-        internal static readonly MongoCredentials UserCredentials = GetCredentials(UserCredentialsSetting, false);
         internal static readonly ReadOnlyCollection<string> UserDatabases = GetDatabases(UserDatabasesSetting);
 
         internal static bool GetRecycleOnExit()
@@ -91,34 +91,6 @@ namespace MongoDB.WindowsAzure.MongoDBRole
             }
 
             return m.Groups[1].Value.Length - 1;
-        }
-
-        private static MongoCredentials GetCredentials(
-            string configurationSettingName,
-            bool admin)
-        {
-            string value;
-
-            if (!TryGetRoleConfigurationSettingValue(
-                configurationSettingName,
-                out value))
-            {
-                return null;
-            }
-
-            var separator = value.IndexOf(':');
-
-            if (separator < 0)
-            {
-                ThrowInvalidConfigurationSetting(
-                    configurationSettingName,
-                    "<hidden>");
-            }
-
-            return new MongoCredentials(
-                value.Substring(0, separator),
-                value.Substring(separator + 1),
-                admin);
         }
 
         private static ReadOnlyCollection<string> GetDatabases(
@@ -158,6 +130,20 @@ namespace MongoDB.WindowsAzure.MongoDBRole
                 false);
         }
 
+        private static bool GetLogFileEnable()
+        {
+            bool value;
+
+            if (!TryGetRoleConfigurationSettingValue(
+                Settings.LogFileEnableSetting,
+                out value))
+            {
+                return true;
+            }
+
+            return value;
+        }
+
         private static string GetReplicaSetKey()
         {
             string value;
@@ -170,7 +156,7 @@ namespace MongoDB.WindowsAzure.MongoDBRole
             }
 
             // values must be base64
-            var m = Regex.Match(value, "^(?:[0-9A-Za-z+/]{4})*(?:[0-9A-Za-z+/]{2}==|[0-9A-Za-z+/]{3}=|[0-9A-Za-z+/]{4})$");
+            var m = Regex.Match(value, "^[0-9A-Za-z+/]+={0,2}$");
             if (!m.Success)
             {
                 ThrowInvalidConfigurationSetting(

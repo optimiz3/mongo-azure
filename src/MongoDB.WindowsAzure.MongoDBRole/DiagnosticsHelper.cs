@@ -138,6 +138,11 @@ namespace MongoDB.WindowsAzure.MongoDBRole
 
         private static string EscapeMessage(string message)
         {
+            if (message == null)
+            {
+                return string.Empty;
+            }
+
             // Replace all instances of { and } with {{ and }} respectively.
             return regexEscapeMessage.Replace(
                 message,

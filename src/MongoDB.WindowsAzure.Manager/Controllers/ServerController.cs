@@ -70,7 +70,7 @@ namespace MongoDB.WindowsAzure.Manager.Controllers
                 return RedirectToAction("Index", "Dashboard");
             }
 
-            var mongo = MongoServer.Create("mongodb://" + server.Name + "/");
+            var mongo = new MongoClient("mongodb://" + server.Name + "/").GetServer();
             try
             {
                 var result = mongo["admin"].RunCommand("replSetStepDown");
@@ -103,7 +103,7 @@ namespace MongoDB.WindowsAzure.Manager.Controllers
                 return RedirectToAction("Index", "Dashboard");
             }
 
-            var mongo = MongoServer.Create("mongodb://" + server.Name + "/?slaveOk=true");
+            var mongo = new MongoClient("mongodb://" + server.Name + "/?slaveOk=true").GetServer();
             try
             {
                 var result = mongo["admin"].RunCommand("logRotate");
@@ -155,7 +155,12 @@ namespace MongoDB.WindowsAzure.Manager.Controllers
         public JsonResult GetServerLog(int id)
         {
             var server = ServerStatus.Get(id);
-            var mongo = MongoServer.Create(new MongoServerSettings { ConnectTimeout = new TimeSpan(0, 0, 3), Server = MongoServerAddress.Parse(server.Name), SlaveOk = true });
+            var mongo = new MongoClient(new MongoClientSettings
+            {
+                ConnectTimeout = new TimeSpan(0, 0, 3),
+                Server = MongoServerAddress.Parse(server.Name),
+                ReadPreference = ReadPreference.SecondaryPreferred,
+            }).GetServer();
             try
             {
                 var result = mongo["admin"]["$cmd"].FindOne(Query.EQ("getLog", "global"));

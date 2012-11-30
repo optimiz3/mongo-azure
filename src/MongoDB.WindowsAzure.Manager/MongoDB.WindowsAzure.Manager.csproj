@@ -62,11 +62,13 @@
     <Reference Include="Microsoft.WindowsAzure.StorageClient, Version=1.7.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
       <HintPath>..\..\packages\WindowsAzure.Storage.1.7.0.0\lib\net35-full\Microsoft.WindowsAzure.StorageClient.dll</HintPath>
     </Reference>
-    <Reference Include="MongoDB.Bson">
-      <HintPath>..\..\lib\mongocsharpdriver.1.4.2\MongoDB.Bson.dll</HintPath>
+    <Reference Include="MongoDB.Bson, Version=1.4.2.4500, Culture=neutral, PublicKeyToken=f686731cfb9cc103, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\lib\CSharpDriver-1.7.0.4714\MongoDB.Bson.dll</HintPath>
     </Reference>
-    <Reference Include="MongoDB.Driver">
-      <HintPath>..\..\lib\mongocsharpdriver.1.4.2\MongoDB.Driver.dll</HintPath>
+    <Reference Include="MongoDB.Driver, Version=1.4.2.4500, Culture=neutral, PublicKeyToken=f686731cfb9cc103, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\lib\CSharpDriver-1.7.0.4714\MongoDB.Driver.dll</HintPath>
     </Reference>
     <Reference Include="System.Data.Services.Client" />
     <Reference Include="System.Web.Mvc, Version=3.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">

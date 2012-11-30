@@ -35,6 +35,7 @@ namespace MongoDB.WindowsAzure.MongoDBRole
     {
         private MongoDBProcess mongodProcess;
         private CloudDrive mongoDataDrive;
+        private ReplSetHelper replSetHelper;
         private ManualResetEvent stopEvent;
         private string tempKeyFile;
 
@@ -78,9 +79,12 @@ namespace MongoDB.WindowsAzure.MongoDBRole
 
                 StartMongoD();
 
-                DatabaseHelper.Initialize(this.mongodProcess.EndPoint);
+                this.replSetHelper = DatabaseHelper.Initialize(
+                    this.mongodProcess.EndPoint);
 
                 this.stopEvent = new ManualResetEvent(false);
+
+                this.replSetHelper.StartInstanceMaintainer();
             }
 
             return true;
@@ -90,14 +94,20 @@ namespace MongoDB.WindowsAzure.MongoDBRole
         {
             using (DiagnosticsHelper.TraceMethod())
             {
-                if (this.mongodProcess != null &&
+                if (this.replSetHelper != null)
+                {
+                    this.replSetHelper.StopInstanceMaintainer();
+                }
+
+                if (this.replSetHelper != null &&
+                    this.mongodProcess != null &&
                     this.mongodProcess.IsRunning)
                 {
-                    if (RoleSettings.ReplicaSetName != null)
+                    if (this.replSetHelper.ReplicaCount > 1)
                     {
                         try
                         {
-                            DatabaseHelper.Stepdown(this.mongodProcess.EndPoint);
+                            DatabaseHelper.Stepdown(this.replSetHelper);
                         }
                         catch (MongoCommandException e)
                         {
@@ -108,7 +118,7 @@ namespace MongoDB.WindowsAzure.MongoDBRole
 
                     try
                     {
-                        DatabaseHelper.Shutdown(this.mongodProcess.EndPoint);
+                        DatabaseHelper.Shutdown(this.replSetHelper.AdminHelper, true);
                     }
                     catch (MongoCommandException e)
                     {
@@ -259,8 +269,6 @@ namespace MongoDB.WindowsAzure.MongoDBRole
 
                 var dbPath = GetMongoDataPath();
 
-                var logPath = GetLogPath();
-
                 var logLevel = Settings.MongodLogLevel;
 
                 var mongodProcess = new MongoDBProcess(mongodPath);
@@ -269,7 +277,11 @@ namespace MongoDB.WindowsAzure.MongoDBRole
                 mongodProcess.DbPath = dbPath;
                 mongodProcess.DirectoryPerDb = Settings.DirectoryPerDB;
                 mongodProcess.LogLevel = Settings.MongodLogLevel;
-                //mongodProcess.LogPath = logPath;
+
+                if (Settings.LogFileEnable)
+                {
+                    mongodProcess.LogPath = GetLogPath();
+                }
 
                 // Azure doesn't support IPv6 yet
                 // https://www.windowsazure.com/en-us/support/faq/
@@ -325,7 +337,15 @@ namespace MongoDB.WindowsAzure.MongoDBRole
         {
             using (DiagnosticsHelper.TraceMethod())
             {
-                var localStorage = RoleEnvironment.GetLocalResource(Settings.LogDirSetting);
+                LocalResource localStorage;
+                try
+                {
+                    localStorage = RoleEnvironment.GetLocalResource(Settings.LogDirSetting);
+                }
+                catch (RoleEnvironmentException)
+                {
+                    return null;
+                }
                 return Path.Combine(localStorage.RootPath, Settings.MongodLogFileName);
             }
         }
@@ -388,12 +408,6 @@ namespace MongoDB.WindowsAzure.MongoDBRole
                     "Role {0} now has {1} instance(s)",
                     roleName,
                     RoleEnvironment.Roles[roleName].Instances.Count);
-
-                if (roleName == currentRoleName)
-                {
-                    DatabaseHelper.Reinitialize(
-                        this.mongodProcess.EndPoint);
-                }
             }
         }
     }
