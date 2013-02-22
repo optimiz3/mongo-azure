@@ -351,7 +351,7 @@ namespace MongoDB.WindowsAzure.MongoDBRole
                     };
 
                     var server = DatabaseHelper.GetSlaveOkConnection(endPoint);
-                    server["admin"].RunCommand(commandDocument);
+                    server.GetDatabase("admin").RunCommand(commandDocument);
                 }
 
                 this.logLevel = value;
